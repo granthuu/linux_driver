@@ -1,0 +1,4 @@
+NFS挂接根文件系统：
+set bootargs console=ttySAC0,115200 root=/dev/nfs nfsroot=192.168.1.10:/work/nfs_root/fs_mini_mdev ip=192.168.1.17:192.168.1.10:192.168.1.1:255.255.255.0::eth0:off
+save
+

@@ -1,0 +1,52 @@
+1st_drv:
+		编写第一个驱动：点亮LED灯。
+		注册字符设备，应用程序一直在查询读取到的命令。
+	总结知识点：
+		如何注册字符设备：
+		1. 主设备号
+		2. file_operations结构体分配
+		3. 注册字符设备：register_chrdev(major, "name", &file_operations) // 建立主设备号和file_operation结构体之间的关系
+		4. 修饰符： module_init, module_exit
+		5. MODULE_LICENSE("GPL");
+		
+		应用层写操作函数，如何进入到内核驱动层去写呢？
+		驱动操作函数： copy_from_user(dest, src, size);
+		
+	相关操作命令：
+		insmod 
+		rmmod
+		lsmod
+		
+		cat /proc/devices
+		
+	
+2nd_drv:
+		读取按键的状态值。
+		应用程序一直在查询按键管脚状态值，CPU一直被占用。
+	总结知识点：
+		如何注册字符设备：
+		1. 主设备号
+		2. file_operations结构体分配
+		3. 注册字符设备：register_chrdev(major, "name", &file_operations) // 建立主设备号和file_operation结构体之间的关系
+		4. 修饰符： module_init, module_exit
+		5. MODULE_LICENSE("GPL");
+		
+		应用层读操作函数，如何进入到内核驱动层去读呢？
+		驱动操作函数： copy_to_user(dest, src, size);
+	
+	相关操作命令：
+		./seconddrvtest &    // “&”可以让应用程序在后台运行
+		top                  // 命令可以查看进程使用CPU的情况
+		kill -9 PID          // 可以杀死进程号为PID的进程
+		
+		
+3rd_drv:
+		利用中断方式，注册按键中断到内核。
+		这样解放了CPU一直查询按键的任务。
+		但没有按键按下的时候，读取按键的任务进入休眠态；只有当按键按下，触发中断时候，则进程成休眠态返回，并读取相应的按键值。
+		这里注意：没有按键按下时，进程一直休眠不返回。
+		
+	知识点总结：
+		
+		
+		
