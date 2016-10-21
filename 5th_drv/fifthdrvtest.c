@@ -1,4 +1,3 @@
-
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <fcntl.h>
@@ -10,8 +9,7 @@
 #include <fcntl.h>
 
 
-/* fifthdrvtest 
-  */
+/* fifthdrvtest */
 int fd;
 
 void my_signal_fun(int signum)
@@ -37,8 +35,10 @@ int main(int argc, char **argv)
 
 	fcntl(fd, F_SETOWN, getpid());
 	Oflags = fcntl(fd, F_GETFL); 
-	fcntl(fd, F_SETFL, Oflags | FASYNC);
 
+	printf("before: \n");
+	fcntl(fd, F_SETFL, Oflags | FASYNC);  
+    printf("after: \n");
 
 	while (1)
 	{
@@ -47,4 +47,8 @@ int main(int argc, char **argv)
 	
 	return 0;
 }
+
+
+
+
 

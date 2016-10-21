@@ -10,6 +10,7 @@
 
 #include <asm/arch/regs-gpio.h>
 #include <asm/hardware.h>
+#include <linux/poll.h>
 
 
 struct pin_desc{
@@ -64,7 +65,7 @@ static irqreturn_t key_isr(int irq, void *dev_id)
 }
 
 
-int third_drv_open(struct inode *inode, struct file *file)
+int forth_drv_open(struct inode *inode, struct file *file)
 {
     /* register key interrupt */
 	request_irq(IRQ_EINT0,  key_isr, IRQT_BOTHEDGE, "S2", &pins_desc[0]);
@@ -75,7 +76,7 @@ int third_drv_open(struct inode *inode, struct file *file)
     return 0;
 }
 
-int third_drv_close(struct inode *inode, struct file *file)
+int forth_drv_close(struct inode *inode, struct file *file)
 {
     printk("third_drv_close\n");
     
@@ -88,7 +89,7 @@ int third_drv_close(struct inode *inode, struct file *file)
 }
 
 
-ssize_t third_drv_read(struct file *file, char __user *buf, size_t size, loff_t *pos)
+ssize_t forth_drv_read(struct file *file, char __user *buf, size_t size, loff_t *pos)
 {
     if(size != 1)
     {
@@ -105,38 +106,49 @@ ssize_t third_drv_read(struct file *file, char __user *buf, size_t size, loff_t 
     return 1;
 }
 
+unsigned int forth_drv_poll(struct file *file, struct poll_table_struct *wait)
+{
+	unsigned int mask = 0;
+	poll_wait(file, &buttonQueue, wait); // ≤ªª·¡¢º¥–›√ﬂ
+
+	if (ev_press)
+		mask |= POLLIN | POLLRDNORM;
+
+	return mask;
+}
 
 
 
-static const struct file_operations third_fops = {
+static const struct file_operations forth_fops = {
 
     .owner   = THIS_MODULE,
-    .open    = third_drv_open,
-    .read    = third_drv_read,
-    .release = third_drv_close,
+    .open    = forth_drv_open,
+    .read    = forth_drv_read,
+    .release = forth_drv_close,
+    .poll    = forth_drv_poll,
 };
 
 
 int major = 0;
-int third_drv_init(void)
+int forth_drv_init(void)
 {
-    major = register_chrdev(0, "third_drv", &third_fops);
-    cls = class_create(THIS_MODULE, "third_drv");
-    device_create(cls, NULL, MKDEV(major, 0), "thirdDrv");  /* /dev/thirdDrv  */
+    major = register_chrdev(0, "forth_drv", &forth_fops);
+    cls = class_create(THIS_MODULE, "forth_drv");
+    device_create(cls, NULL, MKDEV(major, 0), "forthDrv");  /* /dev/forthDrv  */
         
     return 0;
 }
 
 
-void third_drv_exit(void)
+void forth_drv_exit(void)
 {
     device_destroy(cls, MKDEV(major, 0));
     class_destroy(cls);
-    unregister_chrdev(major, "third_drv");
+    unregister_chrdev(major, "forth_drv");
 }
 
-module_init(third_drv_init);
-module_exit(third_drv_exit);
+module_init(forth_drv_init);
+module_exit(forth_drv_exit);
 
 MODULE_LICENSE("GPL");
 

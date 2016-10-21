@@ -103,8 +103,8 @@ ssize_t third_drv_read(struct file *file, char __user *buf, size_t size, loff_t 
 
 int third_drv_close(struct inode *inode, struct file *file)
 {
-	free_irq(IRQ_EINT0, &pins_desc[0]);
-	free_irq(IRQ_EINT2, &pins_desc[1]);
+	free_irq(IRQ_EINT0,  &pins_desc[0]);
+	free_irq(IRQ_EINT2,  &pins_desc[1]);
 	free_irq(IRQ_EINT11, &pins_desc[2]);
 	free_irq(IRQ_EINT19, &pins_desc[3]);
 	return 0;

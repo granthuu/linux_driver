@@ -44,9 +44,238 @@
 		利用中断方式，注册按键中断到内核。
 		这样解放了CPU一直查询按键的任务。
 		但没有按键按下的时候，读取按键的任务进入休眠态；只有当按键按下，触发中断时候，则进程成休眠态返回，并读取相应的按键值。
-		这里注意：没有按键按下时，进程一直休眠不返回。
+		注意：没有按键按下时，进程一直休眠不返回。
 		
 	知识点总结：
+		1.　中断注册：
+			int request_irq(unsigned int irq, irq_handler_t handler,
+				unsigned long irqflags, const char *devname, void *dev_id)
+			中断释放：
+			void free_irq(unsigned int irq, void *dev_id)
+			
+		2. 休眠队列：
+		2.1 声明定义休眠队列：
+			static DECLARE_WAIT_QUEUE_HEAD(buttonQueue);
+		2.2 唤醒队列
+			wake_up_interruptible(&buttonQueue);
+		2.3 等待队列唤醒，读取按键，ev_press为状态值，当ev_press = 1，唤醒队列：buttonQueue
+			wait_event_interruptible(buttonQueue, ev_press);	
+
+		3. file_operations函数：
+			static const struct file_operations third_fops = {
+
+				.owner   = THIS_MODULE,
+				.open    = third_drv_open,     /* 应用程序打开时调用 */
+				.read    = third_drv_read,
+				.release = third_drv_close,    /* 应用程序退出时调用 */
+			};
+
+			
+4th_drv:
+		POLL机制，可以设置休眠的超时时间。当到达超时时间并且仍然没有按键数据可以读取，还在休眠的应用程序会超时返回。
+		防止该进程永不返回。
+		
+	知识点总结：
+	
+		1. 驱动POLL，在file_operations结构体中添加poll函数：
+			static const struct file_operations forth_fops = {
+
+				....
+				.poll    = forth_drv_poll,
+			};	
+			
+			unsigned int forth_drv_poll(struct file *file, struct poll_table_struct *wait)
+			{
+				unsigned int mask = 0;
+				poll_wait(file, &buttonQueue, wait); // 不会立即休眠
+
+				if (ev_press) // 如果有按键按下，则触发事件POLLIN
+					mask |= POLLIN | POLLRDNORM;
+
+				return mask;
+			}	
+		
+		2. 应用程序POLL：
+			struct pollfd fds[1];
+			fds[0].fd     = fd;       /* 对应的文件句柄 */
+			fds[0].events = POLLIN;   /* 触发的事件     */
+			
+			// 设置超时时间：5000ms
+			ret = poll(fds, 1, 5000);
+			if (ret == 0)
+			{
+				/* 超时打印 */
+				printf("time out\n");
+			}
+			else
+			{
+				/* 在未超时时间内读取键值，如果有按键按下，则返回；如果没有按键按下，则进入休眠态 */
+				read(fd, &keyVal, 1);
+				printf("cnt: %d, keyVal: 0x%x\n", cnt++, keyVal);
+			}
+		
+5th_drv:
+		驱动：异步通知机制
+		如果有按键按下，则驱动会发出一个按键按下的信号给应用程序，通知它来读取。
+		相当于：驱动实现"软件"中断的方式，当有按键按下时，打印按键信息。
+		
+	知识点总结：
+		1. 驱动aysnc，在file_operations结构体中添加fasync函数
+		
+		// 定义声明
+		static struct fasync_struct *button_async;
+		
+		// 在按键中断处理函数中
+		static irqreturn_t key_isr(int irq, void *dev_id)
+		{
+			...
+			
+			kill_fasync (&button_async, SIGIO, POLL_IN);    //如果进入按键中断，则发送信号 SIGIO 给应用层程序
+		}
+		
+		static const struct file_operations fifth_fops = {
+			...
+			.fasync  = fifth_drv_fasync,
+		};
+		
+		/* 这个函数什么时候被调用呢？下面有解释 */
+		static int fifth_drv_fasync (int fd, struct file *filp, int on)
+		{
+			printk("driver: fifth_drv_fasync\n");
+			return fasync_helper (fd, filp, on, &button_async);
+		}
+		
+		2. 应用程序设置启动async功能：
+		void my_signal_fun(int signum)
+		{
+			unsigned char key_val;
+			read(fd, &key_val, 1);
+			printf("key_val: 0x%x\n", key_val);
+		}	
+
+		main{		
+			...
+			
+			signal(SIGIO, my_signal_fun);        // 设置当驱动层有信号传来(表示有按键按下)，调用哪个函数来处理
+			
+			fcntl(fd, F_SETOWN, getpid());       // 设置fd属于哪个进程pid
+			Oflags = fcntl(fd, F_GETFL);         // 获取该fd的标志参数
+			fcntl(fd, F_SETFL, Oflags | FASYNC); // 设置并启动fd的FASYNC功能: 这句话设置完成将调用驱动程序的函数：fifth_drv_fasync		
+		}
+	
+		
+6th_drv:
+		定义互斥锁机制，保证应用程序不会同时被调用。
+		知识点：共享资源的使用。比如对同一个缓冲区进行读写操作，这会导致数据混乱。
+		例子：互斥锁机制，阻塞/非阻塞模式
+		
+	知识点总结：
+	
+		1. 驱动程序：互斥锁机制
+		// 定义互斥锁
+		static DECLARE_MUTEX(button_lock);     
+		
+		// 获取信号量
+		// 打开文件：阻塞和非阻塞方式访问
+		int sixth_drv_open(struct inode *inode, struct file *file)
+		{
+			if (file->f_flags & O_NONBLOCK)
+			{
+				if (down_trylock(&button_lock))
+				{
+					//如果为非阻塞方式访问，则获取不到资源立刻返回
+					return -EBUSY;            
+				}
+			}
+			else
+			{
+				/* 阻塞方式 获取信号量: 
+				 * 如果该信号量已经被占用, 则该进程一直在这里等待不返回，直到该信号量被释放
+				 */
+				down(&button_lock);
+			}
+		}
+		
+		// 读函数
+		ssize_t sixth_drv_read(struct file *file, char __user *buf, size_t size, loff_t *pos)
+
+		    // 非阻塞方式读取，则如果获取不到资源，立刻返回
+			if (file->f_flags & O_NONBLOCK)
+			{
+				if (!ev_press)
+				{   
+					printk("sixth_drv_read: O_NONBLOCK return\n");
+					return -EAGAIN;
+				}
+			}
+			else  // 阻塞方式访问，如果获取不到资源，进入休眠态等待
+			{
+				/* 等待按键按下事件发生 */
+				wait_event_interruptible(buttonQueue, ev_press);
+			}
+		
+		// 释放信号量
+		int sixth_drv_close(struct inode *inode, struct file *file)
+			up(&button_lock);  /* 释放信号量*/
+			
+		2. 应用程序
+		fd = open("/dev/sixthDrv", O_RDWR | O_NONBLOCK);  // 以非阻塞的方式访问文件
+
+
+		
+7th_drv:
+		定义一个定时器模块，用来消除按键抖动。10ms的按键采样频率.
+		
+	知识点总结:
+	
+		1. 驱动模块
+			//定时器的初始化
+			int seventh_drv_init(void)
+			{
+				...
+				init_timer(&buttons_timer);                        // 定义一个定时器模块
+				buttons_timer.function = buttons_timer_function;   // 设置定时器超时处理函数
+				buttons_timer.expires  = 0;                        // 设置定时器超时时间
+				add_timer(&buttons_timer);                         // 注册定时器模块
+			}
+			
+			// 在按键中断里，用10ms的频率处理按键抖动情况：
+			// 一次按键中断发生，就延长10ms后处理，直到在10ms里检测不到中断，表示一次有效按键产生
+			static irqreturn_t key_isr(int irq, void *dev_id)
+			{
+				/* 10ms后启动定时器 */
+				irq_pd = (struct pin_desc *)dev_id;
+				mod_timer(&buttons_timer, jiffies + (HZ / 100));  /* 10ms按键去抖动*/
+				
+				return IRQ_RETVAL(IRQ_HANDLED);
+			}
+			
+			// 在定时器超时中断函数中，读取有效的按键值
+			static void buttons_timer_function(unsigned long data)
+			{
+				...
+				ev_press = 1;                          /* 表示中断发生了 */
+				wake_up_interruptible(&buttonQueue);   /* 唤醒休眠的进程 */		
+			}
+		
+		2. 应用程序：
 		
 		
+		3. 测试
+		先输入两次：
+			./seventhdrvtest &
+			./seventhdrvtest &
+		再输入
+			top
+		
+		看到打印信息：
+			Mem: 6652K used, 54532K free, 0K shrd, 0K buff, 1996K cached
+			CPU:   0% usr   0% sys   0% nice  99% idle   0% io   0% irq   0% softirq
+			Load average: 0.56 0.15 0.05
+			  PID  PPID USER     STAT   VSZ %MEM %CPU COMMAND
+			  779   771 0        R     3096   5%   0% top 
+			  771     1 0        S     3096   5%   0% -sh 
+				1     0 0        S     3092   5%   0% init       
+			  777   771 0        S     1312   2%   0% ./seventhdrvtest   (sleep模式，当没有按键按下的时候)
+			  778   771 0        D     1308   2%   0% ./seventhdrvtest   (获取不到资源，进入僵死状态，除非上一个应用程序退出)
 		

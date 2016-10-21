@@ -69,7 +69,7 @@ static irqreturn_t buttons_irq(int irq, void *dev_id)
 		key_val = pindesc->key_val;
 	}
 
-    ev_press = 1;                  /* 表示中断发生了 */
+    ev_press = 1;                           /* 表示中断发生了 */
     wake_up_interruptible(&button_waitq);   /* 唤醒休眠的进程 */
 	
 	kill_fasync (&button_async, SIGIO, POLL_IN);

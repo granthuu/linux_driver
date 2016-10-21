@@ -10,6 +10,7 @@
 
 #include <asm/arch/regs-gpio.h>
 #include <asm/hardware.h>
+#include <linux/poll.h>
 
 
 struct pin_desc{
@@ -36,7 +37,7 @@ struct class * cls;
 static DECLARE_WAIT_QUEUE_HEAD(buttonQueue);
 static volatile int ev_press = 0;
 
-
+static struct fasync_struct *button_async;
 
 static irqreturn_t key_isr(int irq, void *dev_id)
 {
@@ -59,12 +60,14 @@ static irqreturn_t key_isr(int irq, void *dev_id)
 	/* 2. wake up waitQueue */
 	ev_press = 1;
 	wake_up_interruptible(&buttonQueue);
-    
+	
+	kill_fasync (&button_async, SIGIO, POLL_IN);
+
 	return IRQ_RETVAL(IRQ_HANDLED);  
 }
 
 
-int third_drv_open(struct inode *inode, struct file *file)
+int fifth_drv_open(struct inode *inode, struct file *file)
 {
     /* register key interrupt */
 	request_irq(IRQ_EINT0,  key_isr, IRQT_BOTHEDGE, "S2", &pins_desc[0]);
@@ -75,9 +78,9 @@ int third_drv_open(struct inode *inode, struct file *file)
     return 0;
 }
 
-int third_drv_close(struct inode *inode, struct file *file)
+int fifth_drv_close(struct inode *inode, struct file *file)
 {
-    printk("third_drv_close\n");
+    printk("fifth_drv_close\n");
     
     free_irq(IRQ_EINT0,  &pins_desc[0]);
     free_irq(IRQ_EINT2,  &pins_desc[1]);  
@@ -88,7 +91,7 @@ int third_drv_close(struct inode *inode, struct file *file)
 }
 
 
-ssize_t third_drv_read(struct file *file, char __user *buf, size_t size, loff_t *pos)
+ssize_t fifth_drv_read(struct file *file, char __user *buf, size_t size, loff_t *pos)
 {
     if(size != 1)
     {
@@ -105,38 +108,54 @@ ssize_t third_drv_read(struct file *file, char __user *buf, size_t size, loff_t 
     return 1;
 }
 
+unsigned int fifth_drv_poll(struct file *file, struct poll_table_struct *wait)
+{
+	unsigned int mask = 0;
+	poll_wait(file, &buttonQueue, wait); // ≤ªª·¡¢º¥–›√ﬂ
+
+	if (ev_press)
+		mask |= POLLIN | POLLRDNORM;
+
+	return mask;
+}
+
+static int fifth_drv_fasync (int fd, struct file *filp, int on)
+{
+	printk("driver: fifth_drv_fasync\n");
+	return fasync_helper (fd, filp, on, &button_async);
+}
 
 
-
-static const struct file_operations third_fops = {
-
+static const struct file_operations fifth_fops = {
     .owner   = THIS_MODULE,
-    .open    = third_drv_open,
-    .read    = third_drv_read,
-    .release = third_drv_close,
+    .open    = fifth_drv_open,
+    .read    = fifth_drv_read,
+    .release = fifth_drv_close,
+    .poll    = fifth_drv_poll,
+    .fasync  = fifth_drv_fasync,
 };
 
 
 int major = 0;
-int third_drv_init(void)
+int fifth_drv_init(void)
 {
-    major = register_chrdev(0, "third_drv", &third_fops);
-    cls = class_create(THIS_MODULE, "third_drv");
-    device_create(cls, NULL, MKDEV(major, 0), "thirdDrv");  /* /dev/thirdDrv  */
+    major = register_chrdev(0, "fifth_drv", &fifth_fops);
+    cls = class_create(THIS_MODULE, "fifth_drv");
+    device_create(cls, NULL, MKDEV(major, 0), "fifthDrv");  /* /dev/fifthDrv  */
         
     return 0;
 }
 
 
-void third_drv_exit(void)
+void fifth_drv_exit(void)
 {
     device_destroy(cls, MKDEV(major, 0));
     class_destroy(cls);
-    unregister_chrdev(major, "third_drv");
+    unregister_chrdev(major, "fifth_drv");
 }
 
-module_init(third_drv_init);
-module_exit(third_drv_exit);
+module_init(fifth_drv_init);
+module_exit(fifth_drv_exit);
 
 MODULE_LICENSE("GPL");
 
